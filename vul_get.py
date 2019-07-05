@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
+import time
 import random
-
+import traceback
 import requests
 from lxml import etree
 from selenium import webdriver
-import time
-import traceback
 from collections import OrderedDict
-from pprint import pprint
+from mongo_proxy import Dbproxy
+# from pprint import pprint
+
+db = Dbproxy()
 
 
 def not_empty(s):
@@ -166,7 +168,7 @@ class CnnvdSpider(object):
             detail_url = self.part_url + a
             print(detail_url)
             item = {}
-            item = OrderedDict()
+            # item = OrderedDict()
             try:
                 detail_html = self.get_content(detail_url)
                 cnnvd_id = detail_html.xpath("//div/div/div/div/ul/li/span")[0].text.strip()
@@ -207,6 +209,7 @@ class CnnvdSpider(object):
             except:
                 traceback.print_exc()
             finally:
+                db.insert_one(item)
                 item_list.append(item)
         return item_list
 
@@ -245,7 +248,8 @@ class IcsaSpider(object):
             ics_temp = detail_html.xpath("//div[@id='ncas-header']/h1")[0].text.strip()
             item["ICS Advisory-ID"] = ics_temp.split("(")[-1].strip(")")
             item["title"] = detail_html.xpath("//div[@id='ncas-header']/h2")[0].text.strip()
-            item["CVSS v3"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[1]//text()")[0].strip()
+            CVSS = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[1]//text()")[0].strip()
+            item["CVSS v3"] = CVSS.strip("CVSS v3").strip()
             # item["ATTENTION"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[2]/text()")[0].strip()
             # item["Vendor"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[3]/text()")[0].strip()
             # item["Equipment"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[4]/text()")[0].strip()
@@ -267,10 +271,10 @@ class IcsaSpider(object):
             Equipment_start = overview_cont_list.index("Equipment:") if "Equipment:" in overview_cont_list else vender_start+2
             Vulnerability_start = overview_cont_list.index("Vulnerability:") if "Vulnerability:" in overview_cont_list else Equipment_start+2
             Vulnerability_end = overview_cont_list.index("2. RISK EVALUATION") if "2. RISK EVALUATION" in overview_cont_list else Vulnerability_start+2
-            item["ATTENTION"] = overview_cont_list[ATTENTION_start+1: vender_start]
-            item["Vendor"] = overview_cont_list[vender_start+1: Equipment_start]
-            item["Equipment"] = overview_cont_list[Equipment_start+1: Vulnerability_start]
-            item["Vulnerabilities"] = overview_cont_list[Vulnerability_start+1: Vulnerability_end]
+            item["ATTENTION"] = "".join(overview_cont_list[ATTENTION_start+1: vender_start])
+            item["Vendor"] = "".join(overview_cont_list[vender_start+1: Equipment_start])
+            item["Equipment"] = "".join(overview_cont_list[Equipment_start+1: Vulnerability_start])
+            item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end])
 
             item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[1]")[0].text.strip()
             
@@ -285,6 +289,7 @@ class IcsaSpider(object):
             item["RESEARCHER"] = " ".join(overview_cont_list[background_end+1: res_end])
             item["MITIGATIONS"] = " ".join(overview_cont_list[res_end+1:])
             print(item)
+            db.insert_one(item)
 
     def run(self):
         url = self.start_url.format(0)
@@ -336,7 +341,7 @@ if __name__ == '__main__':
     # cnvd.run()
     # cnnvd = CnnvdSpider()
     # cnnvd.run()
-    # icsa = IcsaSpider()
-    # icsa.run()
-    cve = CveSpider()
-    cve.run()
+    icsa = IcsaSpider()
+    icsa.run()
+    # cve = CveSpider()
+    # cve.run()
