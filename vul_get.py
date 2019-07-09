@@ -3,29 +3,43 @@ import time
 import random
 import traceback
 import requests
+import json
+import codecs
+import chardet
 from lxml import etree
 from selenium import webdriver
 from collections import OrderedDict
-from mongo_proxy import Dbproxy
+# from mongo_proxy import Dbproxy
 # from pprint import pprint
 
-db = Dbproxy()
+# db = Dbproxy()
 
 
 def not_empty(s):
     return s and s.strip()
 
 
-class CnvdSpider(object):
+class BaseSpider(object):
     def __init__(self):
-        super(CnvdSpider, self).__init__()
-        self.start_url = "https://ics.cnvd.org.cn/?max=50&offset={}"
-        self.headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"}
+        super(BaseSpider, self).__init__()
+        self.headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"}
 
     def get_content(self, url):
         resp = requests.get(url, headers=self.headers).content.decode()
         html = etree.HTML(resp)
         return html
+
+    def write_file(self, filename, cont):
+        item = cont.encode().decode('unicode_escape')
+        with open(filename, "a+", encoding='utf-8') as f:
+            f.write(item + "\n")
+
+
+class CnvdSpider(BaseSpider):
+    def __init__(self):
+        super(CnvdSpider, self).__init__()
+        self.start_url = "https://ics.cnvd.org.cn/?max=50&offset={}"
 
     def parse_detail(self, html):
         list = html.xpath("//tbody[@id='tr']/tr")
@@ -52,7 +66,7 @@ class CnvdSpider(object):
                 # item["update_date"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[13]/td[2]").text
                 # item["score"] = driver.find_element_by_xpath(u"//div[@id='showDiv']/div").text
                 item = {}
-                item = OrderedDict()
+                # item = OrderedDict()
                 temp_list = [i.text.strip() if i.text else "" for i in driver.find_elements_by_xpath(u"//div[@class='blkContainerSblk']//tbody/tr//td")][:-1]
                 print(temp_list)
                 cid_start = temp_list.index("CNVD-ID")
@@ -89,14 +103,13 @@ class CnvdSpider(object):
                 item["更新时间"] = "".join(temp_list[update_start+1: attach_start])
                 item["漏洞附件"] = "".join(temp_list[attach_start+1:])
                 print(item)
-                item_list.append(item)
             except ValueError:
                 driver.close()
                 driver = webdriver.Chrome()
                 driver.get(href)
                 time.sleep(10)
                 item = {}
-                item = OrderedDict()
+                # item = OrderedDict()
                 temp_list = [i.text.strip() if i.text else "" for i in driver.find_elements_by_xpath(u"//div[@class='blkContainerSblk']//tbody/tr//td")][:-1]
                 print(temp_list)
                 cid_start = temp_list.index("CNVD-ID")
@@ -133,33 +146,29 @@ class CnvdSpider(object):
                 item["更新时间"] = "".join(temp_list[update_start+1: attach_start])
                 item["漏洞附件"] = "".join(temp_list[attach_start+1:])
                 print(item)
-                item_list.append(item)
             finally:
+                item_list.append(item)
+                item=json.dumps(item)
+                item=item.replace("\\n", "")
+                self.write_file("cnvd.log", item)
                 traceback.print_exc()
         driver.close()
         return item_list
 
     def run(self):
-        for i in range(41):
-            url = self.start_url.format(0)
-            html = self.get_content(url)
-            item = self.parse_detail(html)
-            print(len(item))
-            print(item)
+        # for i in range(41):
+        url = self.start_url.format(40*50)
+        html = self.get_content(url)
+        item = self.parse_detail(html)
+        print(len(item))
+        print(item)
 
 
-class CnnvdSpider(object):
+class CnnvdSpider(BaseSpider):
     def __init__(self):
         super(CnnvdSpider, self).__init__()
         self.start_url = "http://www.cnnvd.org.cn/web/vulnerability/querylist.tag?pageno={}"
         self.part_url = "http://www.cnnvd.org.cn"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"}
-
-    def get_content(self, url):
-        resp = requests.get(url, headers=self.headers).content.decode()
-        html = etree.HTML(resp)
-        return html
 
     def get_detail(self, html):
         url_list = html.xpath("//div[@class='list_list']//li/div/a/@href")
@@ -173,7 +182,7 @@ class CnnvdSpider(object):
                 detail_html = self.get_content(detail_url)
                 cnnvd_id = detail_html.xpath("//div/div/div/div/ul/li/span")[0].text.strip()
                 item["CNNVD编号"] = cnnvd_id.split("：")[-1].strip()
-                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a/@style")[0].strip()
+                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()")[0].strip() if detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()") else "未知"
                 item["CVE-ID"] = detail_html.xpath("//div/div/div/div/ul/li[3]/a")[0].text.strip()
                 item["漏洞类型"] = detail_html.xpath("//div/div/div/div/ul/li[4]/a")[0].text.strip()
                 item["发布时间"] = detail_html.xpath("//div/div/div/div/ul/li[5]/a")[0].text.strip()
@@ -186,13 +195,13 @@ class CnnvdSpider(object):
                 item["参考网址"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p") else ""
                 item["受影响实体"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p") else ""
                 item["补丁"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p") else ""
-                print(item)
+                # print(item)
             except IndexError:
                 time.sleep(10)
                 detail_html = self.get_content(detail_url)
                 cnnvd_id = detail_html.xpath("//div/div/div/div/ul/li/span")[0].text.strip()
                 item["CNNVD编号"] = cnnvd_id.split("：")[-1].strip()
-                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a/@style")[0].strip()
+                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()")[0].strip() if detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()") else "未知"
                 item["CVE-ID"] = detail_html.xpath("//div/div/div/div/ul/li[3]/a")[0].text.strip()
                 item["漏洞类型"] = detail_html.xpath("//div/div/div/div/ul/li[4]/a")[0].text.strip()
                 item["发布时间"] = detail_html.xpath("//div/div/div/div/ul/li[5]/a")[0].text.strip()
@@ -205,11 +214,13 @@ class CnnvdSpider(object):
                 item["参考网址"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p") else ""
                 item["受影响实体"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p") else ""
                 item["补丁"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p") else ""
-                print(item)
+                # print(item)
             except:
                 traceback.print_exc()
             finally:
-                db.insert_one(item)
+                # db.insert_one(item)
+                item = json.dumps(item)
+                self.write_file("cnnvd.log", item)
                 item_list.append(item)
         return item_list
 
@@ -219,22 +230,15 @@ class CnnvdSpider(object):
             html = self.get_content(url_1)
             vul_list = self.get_detail(html)
             print(len(vul_list))
-            print(vul_list)
+            # print(vul_list)
             time.sleep(random.randint(5, 10))
 
 
-class IcsaSpider(object):
+class IcsaSpider(BaseSpider):
     def __init__(self):
         super(IcsaSpider, self).__init__()
         self.start_url = "https://www.us-cert.gov/ics/advisories?page={}"
         self.part_url = "https://www.us-cert.gov"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"}
-
-    def get_content(self, url):
-        resp = requests.get(url, headers=self.headers).content.decode()
-        html = etree.HTML(resp)
-        return html
 
     def get_detail(self, html):
         href_list = html.xpath("//ul//span/a/@href")
@@ -243,8 +247,9 @@ class IcsaSpider(object):
             # detail_url = "https://www.us-cert.gov/ics/advisories/icsa-19-178-01"
             print(detail_url)
             detail_html = self.get_content(detail_url)
-            # item = {}
+            item = {}
             item = OrderedDict()
+
             ics_temp = detail_html.xpath("//div[@id='ncas-header']/h1")[0].text.strip()
             item["ICS Advisory-ID"] = ics_temp.split("(")[-1].strip(")")
             item["title"] = detail_html.xpath("//div[@id='ncas-header']/h2")[0].text.strip()
@@ -265,7 +270,13 @@ class IcsaSpider(object):
             overview_cont_list1 = detail_html.xpath("//div[@id='ncas-content']/div[1]//text()")
             overview_cont_list = [i.strip() for i in list(filter(not_empty, overview_cont_list1))]
             print(overview_cont_list)
-            
+            for i, cont in enumerate(overview_cont_list):
+                if "UPDATE INFORMATION" in cont or "REPOSTED INFORMATION" in cont:
+                    overview_cont_list[i] = "2. UPDATE INFORMATION"
+                elif "AFFECTED PRODUCTS" in cont:
+                    overview_cont_list[i] = "3.1 AFFECTED PRODUCTS"
+                    break
+
             ATTENTION_start = overview_cont_list.index("ATTENTION:") if "ATTENTION:" in overview_cont_list else 1
             vender_start = overview_cont_list.index("Vendor:") if "Vendor:" in overview_cont_list else ATTENTION_start+2
             Equipment_start = overview_cont_list.index("Equipment:") if "Equipment:" in overview_cont_list else vender_start+2
@@ -274,45 +285,67 @@ class IcsaSpider(object):
             item["ATTENTION"] = "".join(overview_cont_list[ATTENTION_start+1: vender_start])
             item["Vendor"] = "".join(overview_cont_list[vender_start+1: Equipment_start])
             item["Equipment"] = "".join(overview_cont_list[Equipment_start+1: Vulnerability_start])
-            item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end])
+            item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end]).replace("\xa0", "")
 
-            item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[1]")[0].text.strip()
-            
-            aftprd_start = overview_cont_list.index("3.1 AFFECTED PRODUCTS")
-            overview_start = overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
-            overview_end = overview_cont_list.index("3.3 BACKGROUND")
-            background_end = overview_cont_list.index("3.4 RESEARCHER")
-            res_end = overview_cont_list.index("4. MITIGATIONS")
-            item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start+1: overview_start])
-            item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start+1: overview_end]).replace("\xa0", "")
-            item["BACKGROUND"] = " ".join(overview_cont_list[overview_end+1: background_end])
-            item["RESEARCHER"] = " ".join(overview_cont_list[background_end+1: res_end])
-            item["MITIGATIONS"] = " ".join(overview_cont_list[res_end+1:])
+            if "2. UPDATE INFORMATION" in overview_cont_list:
+                item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[2]")[0].text.strip()
+                aftprd_start = overview_cont_list.index("4.1 AFFECTED PRODUCTS")
+                overview_start = overview_cont_list.index("4.2 VULNERABILITY OVERVIEW") if "4.2 VULNERABILITY OVERVIEW" in overview_cont_list else aftprd_start+2
+                overview_end = overview_cont_list.index("4.3 BACKGROUND")
+                background_end = overview_cont_list.index("4.4 RESEARCHER")
+                res_end = overview_cont_list.index("5. MITIGATIONS")
+                item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start+1: overview_start])
+                item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start+1: overview_end])
+                item["BACKGROUND"] = " ".join(overview_cont_list[overview_end+1: background_end])
+                item["RESEARCHER"] = " ".join(overview_cont_list[background_end+1: res_end])
+                item["MITIGATIONS"] = " ".join(overview_cont_list[res_end+1:]).replace("\xa0", "")
+            else:
+                item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[1]//text()")[0].strip()
+                aftprd_start = overview_cont_list.index("3.1 AFFECTED PRODUCTS")
+                overview_start = overview_cont_list.index("3.2 VULNERABILITY OVERVIEW") if "3.2 VULNERABILITY OVERVIEW" in overview_cont_list else aftprd_start+2
+                if "3.3 BACKGROUND" in overview_cont_list:
+                    overview_end = overview_cont_list.index("3.3 BACKGROUND")
+                elif "4.3 BACKGROUND" in overview_cont_list:
+                    overview_end = overview_cont_list.index("4.3 BACKGROUND")
+                else:
+                    overview_end = overview_start + 2
+                background_end = overview_cont_list.index("3.4 RESEARCHER") if "3.4 RESEARCHER" in overview_cont_list else overview_end + 2
+                if "4. MITIGATIONS" in overview_cont_list:
+                    res_end = overview_cont_list.index("4. MITIGATIONS")
+                elif "5. MITIGATIONS" in overview_cont_list:
+                    res_end = overview_cont_list.index("5. MITIGATIONS")
+                else:
+                    res_end = background_end + 2
+                item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start+1: overview_start])
+                item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start+1: overview_end])
+                item["BACKGROUND"] = " ".join(overview_cont_list[overview_end+1: background_end])
+                item["RESEARCHER"] = " ".join(overview_cont_list[background_end+1: res_end])
+                item["MITIGATIONS"] = " ".join(overview_cont_list[res_end + 1:]).replace("\xa0", "")
+
             print(item)
-            db.insert_one(item)
+            item=json.dumps(item)
+            item=item.replace("\\n", "")
+            self.write_file("icsa.log", item)
+            # traceback.print_exc()
+            # db.insert_one(item)
 
     def run(self):
-        url = self.start_url.format(0)
-        html = self.get_content(url)
-        self.get_detail(html)
+        for i in range(11, 47):
+            url = self.start_url.format(i)
+            html = self.get_content(url)
+            self.get_detail(html)
+            time.sleep(8)
 
 
-class CveSpider(object):
+class CveSpider(BaseSpider):
     def __init__(self):
         super(CveSpider, self).__init__()
         self.start_url = "http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-{}-{}"
         self.end = "http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-{}-{}"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"}
-
-    def get_content(self, url):
-        resp = requests.get(url, headers=self.headers).content.decode()
-        html = etree.HTML(resp)
-        return html
 
     def get_detail(self, html):
         item = {}
-        item = OrderedDict()
+        # item = OrderedDict()
         item["CVE-ID"] = html.xpath("//tr/td//h2")[0].text.strip()
         item["Description"] = "".join(list(filter(not_empty, html.xpath("//div[@id='GeneratedTable']//tr[4]//text()"))))
         item["References"] = "".join(list(filter(not_empty, html.xpath("//div[@id='GeneratedTable']//tr[7]//text()"))))
@@ -323,12 +356,16 @@ class CveSpider(object):
         item["Comments (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[17]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[17]/td[1]//text()") else ""
         item["Proposed (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[19]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[19]/td[1]//text()") else ""
         print(item)
+        item=json.dumps(item)
+        item=item.replace("\\n", "")
+        self.write_file("cve.log", item)
 
     def run(self):
         year_list = [2019, 2018, 2017, 2016]
         for year in year_list:
             for num in range(1, 30000):
-                num = "%04d" % num
+                if num < 10000:
+                    num = "%04d" % num
                 url = self.start_url.format(year, num)
                 print(url)
                 html = self.get_content(url)
@@ -341,7 +378,7 @@ if __name__ == '__main__':
     # cnvd.run()
     # cnnvd = CnnvdSpider()
     # cnnvd.run()
-    icsa = IcsaSpider()
-    icsa.run()
-    # cve = CveSpider()
-    # cve.run()
+    # icsa = IcsaSpider()
+    # icsa.run()
+    cve = CveSpider()
+    cve.run()
