@@ -4,8 +4,8 @@ import random
 import traceback
 import requests
 import json
-import codecs
-import chardet
+# import codecs
+# import chardet
 from lxml import etree
 from selenium import webdriver
 from collections import OrderedDict
@@ -175,6 +175,7 @@ class CnnvdSpider(BaseSpider):
         item_list = []
         for a in url_list:
             detail_url = self.part_url + a
+            # detail_url = "http://www.cnnvd.org.cn/web/xxk/ldxqById.tag?CNNVD=CNNVD-201907-368"
             print(detail_url)
             item = {}
             # item = OrderedDict()
@@ -182,7 +183,7 @@ class CnnvdSpider(BaseSpider):
                 detail_html = self.get_content(detail_url)
                 cnnvd_id = detail_html.xpath("//div/div/div/div/ul/li/span")[0].text.strip()
                 item["CNNVD编号"] = cnnvd_id.split("：")[-1].strip()
-                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()")[0].strip() if detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()") else "未知"
+                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a")[0].text.strip() if detail_html.xpath("//div/div/div/div/ul/li[2]/a")[0].text.strip() else "未知"
                 item["CVE-ID"] = detail_html.xpath("//div/div/div/div/ul/li[3]/a")[0].text.strip()
                 item["漏洞类型"] = detail_html.xpath("//div/div/div/div/ul/li[4]/a")[0].text.strip()
                 item["发布时间"] = detail_html.xpath("//div/div/div/div/ul/li[5]/a")[0].text.strip()
@@ -195,13 +196,13 @@ class CnnvdSpider(BaseSpider):
                 item["参考网址"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p") else ""
                 item["受影响实体"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p") else ""
                 item["补丁"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p") else ""
-                # print(item)
+                print(item)
             except IndexError:
                 time.sleep(10)
                 detail_html = self.get_content(detail_url)
                 cnnvd_id = detail_html.xpath("//div/div/div/div/ul/li/span")[0].text.strip()
                 item["CNNVD编号"] = cnnvd_id.split("：")[-1].strip()
-                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()")[0].strip() if detail_html.xpath("//div/div/div/div/ul/li[2]/a/text()") else "未知"
+                item["危害等级"] = detail_html.xpath("//div/div/div/div/ul/li[2]/a")[0].text.strip() if detail_html.xpath("//div/div/div/div/ul/li[2]/a")[0].text.strip() else "未知"
                 item["CVE-ID"] = detail_html.xpath("//div/div/div/div/ul/li[3]/a")[0].text.strip()
                 item["漏洞类型"] = detail_html.xpath("//div/div/div/div/ul/li[4]/a")[0].text.strip()
                 item["发布时间"] = detail_html.xpath("//div/div/div/div/ul/li[5]/a")[0].text.strip()
@@ -214,7 +215,7 @@ class CnnvdSpider(BaseSpider):
                 item["参考网址"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p") else ""
                 item["受影响实体"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p") else ""
                 item["补丁"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p") else ""
-                # print(item)
+                print(item)
             except:
                 traceback.print_exc()
             finally:
@@ -225,8 +226,8 @@ class CnnvdSpider(BaseSpider):
         return item_list
 
     def run(self):
-        for i in range(1, 10):
-            url_1 = self.start_url.format(1)
+        for i in range(1, 100):
+            url_1 = self.start_url.format(i)
             html = self.get_content(url_1)
             vul_list = self.get_detail(html)
             print(len(vul_list))
@@ -356,15 +357,15 @@ class CveSpider(BaseSpider):
         item["Comments (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[17]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[17]/td[1]//text()") else ""
         item["Proposed (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[19]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[19]/td[1]//text()") else ""
         print(item)
-        item=json.dumps(item)
-        item=item.replace("\\n", "")
+        item = json.dumps(item)
+        item = item.replace("\\n", "")
         self.write_file("cve.log", item)
 
     def run(self):
-        year_list = [2019, 2018, 2017, 2016]
+        year_list = [2019]
         for year in year_list:
             for num in range(1, 30000):
-                if num < 10000:
+                if num < 1000:
                     num = "%04d" % num
                 url = self.start_url.format(year, num)
                 print(url)
