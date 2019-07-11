@@ -11,8 +11,8 @@ lxml==4.3.4
 PyDispatcher==2.0.5
 PyHamcrest==1.9.0
 queuelib==1.5.0
-requests==2.22.0
-selenium==3.141.0
-six==1.12.0
-urllib3==1.25.3
-zope.interface==4.6.0
+requests
+selenium
+six
+urllib3==1.24.1
+zope.interface
