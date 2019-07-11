@@ -10,6 +10,7 @@ from lxml import etree
 from selenium import webdriver
 from collections import OrderedDict
 # from mongo_proxy import Dbproxy
+from common_func import DbProxy
 # from pprint import pprint
 
 # db = Dbproxy()
@@ -22,6 +23,7 @@ def not_empty(s):
 class BaseSpider(object):
     def __init__(self):
         super(BaseSpider, self).__init__()
+        self.db = DbProxy()
         self.headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"}
 
@@ -46,25 +48,20 @@ class CnvdSpider(BaseSpider):
         item_list = []
         driver = webdriver.Chrome()
         # driver = webdriver.Firefox()
-        # driver = webdriver.PhantomJS(service_args=['--ignore-ssl-errors=true', '--ssl-protocol=TLSv1'])
+        # driver = webdriver.PhantomJS()
         for a in list:
             href = a.xpath(".//a/@href")[0]
             print(href)  # 详情页入口
+            # judge if exist in db
+            select_str = "select count(*) from cnvd_url where href='{}'".format(href)
+            res, rows = self.db.read_db(select_str)
+            if res == 0 and rows:
+                if rows[0][0] > 0:
+                    return "end"
             # href = "https://www.cnvd.org.cn/flaw/show/CNVD-2019-21242"
             driver.get(href)
             time.sleep(5)
             try:
-                # item["nameChs"] = driver.find_element_by_xpath("//div[@class='blkContainerSblk']//h1").text
-                # item["cnvd_id"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[1]/td[2]").text
-                # item["open_date"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[2]/td[2]").text
-                # item["level"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[3]/td[2]").text[0:1]
-                # item["affcet_product"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[4]/td[2]").text
-                # item["cve_id"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[5]/td[2]").text
-                # item["describe"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[6]/td[2]").text
-                # item["baosong_date"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[11]/td[2]").text
-                # item["shoulu_date"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[12]/td[2]").text
-                # item["update_date"] = driver.find_element_by_xpath(u"//table[@class='gg_detail']/tbody/tr[13]/td[2]").text
-                # item["score"] = driver.find_element_by_xpath(u"//div[@id='showDiv']/div").text
                 item = {}
                 # item = OrderedDict()
                 temp_list = [i.text.strip() if i.text else "" for i in driver.find_elements_by_xpath(u"//div[@class='blkContainerSblk']//tbody/tr//td")][:-1]
@@ -151,17 +148,21 @@ class CnvdSpider(BaseSpider):
                 item=json.dumps(item)
                 item=item.replace("\\n", "")
                 self.write_file("cnvd.log", item)
-                traceback.print_exc()
+                sql_str = "insert into cnnvd_url(href) values('{}')".format(href)
+                self.db.write_db(sql_str)
+                # traceback.print_exc()
         driver.close()
-        return item_list
+        # return item_list
 
     def run(self):
-        # for i in range(41):
-        url = self.start_url.format(40*50)
-        html = self.get_content(url)
-        item = self.parse_detail(html)
-        print(len(item))
-        print(item)
+        for i in range(10):
+            url = self.start_url.format(i*50)
+            html = self.get_content(url)
+            item = self.parse_detail(html)
+            if item == "end":
+                break
+            print(len(item))
+            print(item)
 
 
 class CnnvdSpider(BaseSpider):
@@ -172,11 +173,17 @@ class CnnvdSpider(BaseSpider):
 
     def get_detail(self, html):
         url_list = html.xpath("//div[@class='list_list']//li/div/a/@href")
-        item_list = []
+        # item_list = []
         for a in url_list:
             detail_url = self.part_url + a
             # detail_url = "http://www.cnnvd.org.cn/web/xxk/ldxqById.tag?CNNVD=CNNVD-201907-368"
             print(detail_url)
+            # judge if exist in db
+            select_str = "select count(*) from cnnvd_url where href='{}'".format(detail_url)
+            res, rows = self.db.read_db(select_str)
+            if res == 0 and rows:
+                if rows[0][0] > 0:
+                    return "end"
             item = {}
             # item = OrderedDict()
             try:
@@ -219,18 +226,22 @@ class CnnvdSpider(BaseSpider):
             except:
                 traceback.print_exc()
             finally:
-                # db.insert_one(item)
+                # write file and db
                 item = json.dumps(item)
                 self.write_file("cnnvd.log", item)
-                item_list.append(item)
-        return item_list
+                sql_str = "insert into cnnvd_url(href) values('{}')".format(detail_url)
+                self.db.write_db(sql_str)
+        #         item_list.append(item)
+        # return item_list
 
     def run(self):
-        for i in range(1, 100):
+        for i in range(1, 5):
             url_1 = self.start_url.format(i)
             html = self.get_content(url_1)
-            vul_list = self.get_detail(html)
-            print(len(vul_list))
+            res = self.get_detail(html)
+            if res == "end":
+                break
+            # print(len(vul_list))
             # print(vul_list)
             time.sleep(random.randint(5, 10))
 
@@ -377,9 +388,9 @@ class CveSpider(BaseSpider):
 if __name__ == '__main__':
     # cnvd = CnvdSpider()
     # cnvd.run()
-    # cnnvd = CnnvdSpider()
-    # cnnvd.run()
+    cnnvd = CnnvdSpider()
+    cnnvd.run()
     # icsa = IcsaSpider()
     # icsa.run()
-    cve = CveSpider()
-    cve.run()
+    # cve = CveSpider()
+    # cve.run()
