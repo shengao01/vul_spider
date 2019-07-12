@@ -41,7 +41,7 @@ class BaseSpider(object):
 class CnvdSpider(BaseSpider):
     def __init__(self):
         super(CnvdSpider, self).__init__()
-        self.start_url = "https://ics.cnvd.org.cn/?max=50&offset={}"
+        self.start_url = "https://ics.cnvd.org.cn/?max=20&offset={}"
 
     def parse_detail(self, html):
         list = html.xpath("//tbody[@id='tr']/tr")
@@ -148,21 +148,19 @@ class CnvdSpider(BaseSpider):
                 item=json.dumps(item)
                 item=item.replace("\\n", "")
                 self.write_file("cnvd.log", item)
-                sql_str = "insert into cnnvd_url(href) values('{}')".format(href)
+                sql_str = "insert into cnvd_url(href) values('{}')".format(href)
                 self.db.write_db(sql_str)
                 # traceback.print_exc()
         driver.close()
         # return item_list
 
     def run(self):
-        for i in range(10):
-            url = self.start_url.format(i*50)
+        for i in range(1, 5):
+            url = self.start_url.format(i*20)
             html = self.get_content(url)
             item = self.parse_detail(html)
             if item == "end":
                 break
-            print(len(item))
-            print(item)
 
 
 class CnnvdSpider(BaseSpider):
@@ -231,8 +229,6 @@ class CnnvdSpider(BaseSpider):
                 self.write_file("cnnvd.log", item)
                 sql_str = "insert into cnnvd_url(href) values('{}')".format(detail_url)
                 self.db.write_db(sql_str)
-        #         item_list.append(item)
-        # return item_list
 
     def run(self):
         for i in range(1, 5):
@@ -241,8 +237,6 @@ class CnnvdSpider(BaseSpider):
             res = self.get_detail(html)
             if res == "end":
                 break
-            # print(len(vul_list))
-            # print(vul_list)
             time.sleep(random.randint(5, 10))
 
 
@@ -258,15 +252,22 @@ class IcsaSpider(BaseSpider):
             detail_url = self.part_url + a
             # detail_url = "https://www.us-cert.gov/ics/advisories/icsa-19-178-01"
             print(detail_url)
-            detail_html = self.get_content(detail_url)
-            item = {}
-            item = OrderedDict()
+            # judge if exist in db
+            select_str = "select count(*) from icsa_url where href='{}'".format(detail_url)
+            res, rows = self.db.read_db(select_str)
+            if res == 0 and rows:
+                if rows[0][0] > 0:
+                    return "end"
 
+            item={}
+            # item = OrderedDict()
+            detail_html = self.get_content(detail_url)
             ics_temp = detail_html.xpath("//div[@id='ncas-header']/h1")[0].text.strip()
             item["ICS Advisory-ID"] = ics_temp.split("(")[-1].strip(")")
             item["title"] = detail_html.xpath("//div[@id='ncas-header']/h2")[0].text.strip()
-            CVSS = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[1]//text()")[0].strip()
-            item["CVSS v3"] = CVSS.strip("CVSS v3").strip()
+            # CVSS = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[1]//text()")[0].strip()
+            # item["CVSS v3"] = CVSS[8:]
+            item["CVSS v3"] = ""
             # item["ATTENTION"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[2]/text()")[0].strip()
             # item["Vendor"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[3]/text()")[0].strip()
             # item["Equipment"] = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[4]/text()")[0].strip()
@@ -285,67 +286,130 @@ class IcsaSpider(BaseSpider):
             for i, cont in enumerate(overview_cont_list):
                 if "UPDATE INFORMATION" in cont or "REPOSTED INFORMATION" in cont:
                     overview_cont_list[i] = "2. UPDATE INFORMATION"
+                elif "ATTENTION" in cont:
+                    if len(cont) > 10:
+                        item["ATTENTION"] = cont.strip("ATTENTION:").strip()
+                    else:
+                        overview_cont_list[i] = "ATTENTION:"
+                elif "Vendor" in cont:
+                    if len(cont) > 7:
+                        item["Vendor"]=cont.strip("Vendor:").strip()
+                    else:
+                        overview_cont_list[i] = "Vendor:"
+                elif "Equipment" in cont:
+                    if len(cont) > 10:
+                        item["Equipment"]=cont.strip("Equipment:").strip()
+                    else:
+                        overview_cont_list[i] = "Equipment:"
+                elif "Vulnerabilities" in cont:
+                    if len(cont) > 16:
+                        item["Vulnerabilities"]=cont.strip("Vulnerabilities:").strip()
+                    else:
+                        overview_cont_list[i] = "Vulnerabilities:"
+                elif "RISK EVALUATION" in cont:
+                    overview_cont_list[i] = "2. RISK EVALUATION"
                 elif "AFFECTED PRODUCTS" in cont:
                     overview_cont_list[i] = "3.1 AFFECTED PRODUCTS"
-                    break
+                elif "VULNERABILITY OVERVIEW" in cont:
+                    overview_cont_list[i] = "3.2 VULNERABILITY OVERVIEW"
+                elif "BACKGROUND" in cont:
+                    overview_cont_list[i] = "3.3 BACKGROUND"
+                elif "RESEARCHER" in cont:
+                    overview_cont_list[i] = "3.4 RESEARCHER"
+                elif "MITIGATION" in cont:
+                    overview_cont_list[i] = "4. MITIGATIONS"
 
-            ATTENTION_start = overview_cont_list.index("ATTENTION:") if "ATTENTION:" in overview_cont_list else 1
-            vender_start = overview_cont_list.index("Vendor:") if "Vendor:" in overview_cont_list else ATTENTION_start+2
-            Equipment_start = overview_cont_list.index("Equipment:") if "Equipment:" in overview_cont_list else vender_start+2
-            Vulnerability_start = overview_cont_list.index("Vulnerability:") if "Vulnerability:" in overview_cont_list else Equipment_start+2
-            Vulnerability_end = overview_cont_list.index("2. RISK EVALUATION") if "2. RISK EVALUATION" in overview_cont_list else Vulnerability_start+2
-            item["ATTENTION"] = "".join(overview_cont_list[ATTENTION_start+1: vender_start])
-            item["Vendor"] = "".join(overview_cont_list[vender_start+1: Equipment_start])
-            item["Equipment"] = "".join(overview_cont_list[Equipment_start+1: Vulnerability_start])
-            item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end]).replace("\xa0", "")
-
-            if "2. UPDATE INFORMATION" in overview_cont_list:
-                item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[2]")[0].text.strip()
-                aftprd_start = overview_cont_list.index("4.1 AFFECTED PRODUCTS")
-                overview_start = overview_cont_list.index("4.2 VULNERABILITY OVERVIEW") if "4.2 VULNERABILITY OVERVIEW" in overview_cont_list else aftprd_start+2
-                overview_end = overview_cont_list.index("4.3 BACKGROUND")
-                background_end = overview_cont_list.index("4.4 RESEARCHER")
-                res_end = overview_cont_list.index("5. MITIGATIONS")
-                item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start+1: overview_start])
-                item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start+1: overview_end])
-                item["BACKGROUND"] = " ".join(overview_cont_list[overview_end+1: background_end])
-                item["RESEARCHER"] = " ".join(overview_cont_list[background_end+1: res_end])
-                item["MITIGATIONS"] = " ".join(overview_cont_list[res_end+1:]).replace("\xa0", "")
+            if "ATTENTION:" in overview_cont_list:
+                ATTENTION_start = overview_cont_list.index("ATTENTION:")
+                vender_start = overview_cont_list.index("Vendor:") if "Vendor:" in overview_cont_list else ATTENTION_start+2
+                Equipment_start = overview_cont_list.index("Equipment:") if "Equipment:" in overview_cont_list else vender_start+2
+                Vulnerability_start = overview_cont_list.index("Vulnerability:") if "Vulnerability:" in overview_cont_list else Equipment_start+2
+                Vulnerability_end = overview_cont_list.index("2. RISK EVALUATION") if "2. RISK EVALUATION" in overview_cont_list else Vulnerability_start+2
+                item["CVSS v3"] = overview_cont_list[ATTENTION_start-1][8:]
+                item["ATTENTION"] = "".join(overview_cont_list[ATTENTION_start+1: vender_start]).strip(":")
+                item["Vendor"] = "".join(overview_cont_list[vender_start+1: Equipment_start]).strip(":")
+                item["Equipment"] = "".join(overview_cont_list[Equipment_start+1: Vulnerability_start]).strip(":")
+                item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end]).replace("\xa0", "")
+                # item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[1]//text()")[0].strip()
+            elif "Vendor:" in overview_cont_list:
+                vender_start = overview_cont_list.index("Vendor:")
+                Equipment_start = overview_cont_list.index("Equipment:") if "Equipment:" in overview_cont_list else vender_start+2
+                Vulnerability_start = overview_cont_list.index("Vulnerability:") if "Vulnerability:" in overview_cont_list else Equipment_start+2
+                Vulnerability_end = overview_cont_list.index("2. RISK EVALUATION") if "2. RISK EVALUATION" in overview_cont_list else Vulnerability_start+2
+                item["CVSS v3"] = overview_cont_list[vender_start-1][8:]
+                item["ATTENTION"] = ""
+                item["Vendor"] = "".join(overview_cont_list[vender_start+1: Equipment_start]).strip(":")
+                item["Equipment"] = "".join(overview_cont_list[Equipment_start+1: Vulnerability_start]).strip(":")
+                item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end]).replace("\xa0", "")
             else:
-                item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[1]//text()")[0].strip()
+                if "CVSS v3" not in item:
+                    item["CVSS v3"] = ""
+                if "ATTENTION" not in item:
+                    item["ATTENTION"] = ""
+                if "Vendor" not in item:
+                    item["Vendor"] = ""
+                if "Equipment" not in item:
+                    item["Equipment"] = ""
+                if "Vulnerabilities" not in item:
+                    item["Vulnerabilities"] = ""
+
+            try:
+                risk_start = overview_cont_list.index("2. RISK EVALUATION")
                 aftprd_start = overview_cont_list.index("3.1 AFFECTED PRODUCTS")
                 overview_start = overview_cont_list.index("3.2 VULNERABILITY OVERVIEW") if "3.2 VULNERABILITY OVERVIEW" in overview_cont_list else aftprd_start+2
-                if "3.3 BACKGROUND" in overview_cont_list:
-                    overview_end = overview_cont_list.index("3.3 BACKGROUND")
-                elif "4.3 BACKGROUND" in overview_cont_list:
-                    overview_end = overview_cont_list.index("4.3 BACKGROUND")
-                else:
-                    overview_end = overview_start + 2
+                overview_end = overview_cont_list.index("3.3 BACKGROUND")
                 background_end = overview_cont_list.index("3.4 RESEARCHER") if "3.4 RESEARCHER" in overview_cont_list else overview_end + 2
-                if "4. MITIGATIONS" in overview_cont_list:
-                    res_end = overview_cont_list.index("4. MITIGATIONS")
-                elif "5. MITIGATIONS" in overview_cont_list:
-                    res_end = overview_cont_list.index("5. MITIGATIONS")
-                else:
-                    res_end = background_end + 2
+                res_end = overview_cont_list.index("4. MITIGATIONS")
+                item["RISK EVALUATION"] = " ".join(overview_cont_list[risk_start+1: aftprd_start-1])
                 item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start+1: overview_start])
                 item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start+1: overview_end])
                 item["BACKGROUND"] = " ".join(overview_cont_list[overview_end+1: background_end])
                 item["RESEARCHER"] = " ".join(overview_cont_list[background_end+1: res_end])
                 item["MITIGATIONS"] = " ".join(overview_cont_list[res_end + 1:]).replace("\xa0", "")
+            except ValueError:
+                if "ICSMA" in detail_url:
+                    aftprd_start=overview_cont_list.index("3.1 AFFECTED PRODUCTS")
+                    risk_start=overview_cont_list.index("IMPACT")
+                    back_start=overview_cont_list.index("3.3 BACKGROUND")
+                    overview_start=overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
+                    mit_start=overview_cont_list.index("4. MITIGATIONS")
+                    detail_start=overview_cont_list.index("VULNERABILITY DETAILS") if "VULNERABILITY DETAILS" in overview_cont_list else mit_start
+                    item["AFFECTED PRODUCTS"]=" ".join(overview_cont_list[aftprd_start + 1: risk_start])
+                    item["RISK EVALUATION"]=" ".join(overview_cont_list[risk_start + 1: back_start])
+                    item["BACKGROUND"]=" ".join(overview_cont_list[back_start + 1: overview_start-1])
+                    item["VULNERABILITY OVERVIEW"]=" ".join(overview_cont_list[overview_start + 1: detail_start])
+                    item["MITIGATIONS"]=" ".join(overview_cont_list[mit_start + 1:]).replace("\xa0", "")
+
+                elif "IMPACT" in overview_cont_list:
+                    aftprd_start=overview_cont_list.index("3.1 AFFECTED PRODUCTS")
+                    risk_start=overview_cont_list.index("IMPACT")
+                    mit_start=overview_cont_list.index("4. MITIGATIONS")
+                    overview_start=overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
+                    res_start=overview_cont_list.index("3.4 RESEARCHER")
+                    back_start=overview_cont_list.index("3.3 BACKGROUND")
+                    item["AFFECTED PRODUCTS"]=" ".join(overview_cont_list[aftprd_start + 1: risk_start])
+                    item["RISK EVALUATION"]=" ".join(overview_cont_list[risk_start + 1: mit_start - 1])
+                    item["MITIGATIONS"]=" ".join(overview_cont_list[mit_start + 1: overview_start]).replace("\xa0", "")
+                    item["VULNERABILITY OVERVIEW"]=" ".join(overview_cont_list[overview_start + 1: res_start])
+                    item["RESEARCHER"]=" ".join(overview_cont_list[res_start + 1: back_start])
+                    item["BACKGROUND"]=" ".join(overview_cont_list[back_start + 1:])
 
             print(item)
             item=json.dumps(item)
             item=item.replace("\\n", "")
             self.write_file("icsa.log", item)
+            sql_str="insert into icsa_url(href) values('{}')".format(detail_url)
+            self.db.write_db(sql_str)
             # traceback.print_exc()
             # db.insert_one(item)
 
     def run(self):
-        for i in range(11, 47):
+        for i in range(10):
             url = self.start_url.format(i)
             html = self.get_content(url)
-            self.get_detail(html)
+            res = self.get_detail(html)
+            if res == "end":
+                break
             time.sleep(8)
 
 
@@ -388,9 +452,9 @@ class CveSpider(BaseSpider):
 if __name__ == '__main__':
     # cnvd = CnvdSpider()
     # cnvd.run()
-    cnnvd = CnnvdSpider()
-    cnnvd.run()
-    # icsa = IcsaSpider()
-    # icsa.run()
+    # cnnvd = CnnvdSpider()
+    # cnnvd.run()
+    icsa = IcsaSpider()
+    icsa.run()
     # cve = CveSpider()
     # cve.run()
