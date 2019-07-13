@@ -88,7 +88,7 @@ class CnvdSpider(BaseSpider):
                 item["危害级别"] = "".join(temp_list[risk_level_start+1: affect_product_start])[0]
                 item["影响产品"] = "".join(temp_list[affect_product_start+1: BUGTRAQ_start])
                 # item["BUGTRAQ ID"] = "".join(temp_list[BUGTRAQ_start+1: cveid_start])
-                item["CVE ID"] = "".join(temp_list[cveid_start+1: description_start])
+                item["CVE-ID"] = "".join(temp_list[cveid_start+1: description_start])
                 item["漏洞描述"] = "".join(temp_list[description_start+1: type_start])
                 item["漏洞类型"] = "".join(temp_list[type_start+1: href_start])
                 item["参考链接"] = "".join(temp_list[href_start+1: resolve_start])
@@ -131,7 +131,7 @@ class CnvdSpider(BaseSpider):
                 item["危害级别"] = "".join(temp_list[risk_level_start+1: affect_product_start])[0]
                 item["影响产品"] = "".join(temp_list[affect_product_start+1: BUGTRAQ_start])
                 # item["BUGTRAQ ID"] = "".join(temp_list[BUGTRAQ_start+1: cveid_start])
-                item["CVE ID"] = "".join(temp_list[cveid_start+1: description_start])
+                item["CVE-ID"] = "".join(temp_list[cveid_start+1: description_start])
                 item["漏洞描述"] = "".join(temp_list[description_start+1: type_start])
                 item["漏洞类型"] = "".join(temp_list[type_start+1: href_start])
                 item["参考链接"] = "".join(temp_list[href_start+1: resolve_start])
@@ -231,7 +231,7 @@ class CnnvdSpider(BaseSpider):
                 self.db.write_db(sql_str)
 
     def run(self):
-        for i in range(1, 5):
+        for i in range(1, 11):
             url_1 = self.start_url.format(i)
             html = self.get_content(url_1)
             res = self.get_detail(html)
@@ -244,6 +244,7 @@ class IcsaSpider(BaseSpider):
     def __init__(self):
         super(IcsaSpider, self).__init__()
         self.start_url = "https://www.us-cert.gov/ics/advisories?page={}"
+        self.start_alert_url = "https://www.us-cert.gov/ics/alerts?page={}"
         self.part_url = "https://www.us-cert.gov"
 
     def get_detail(self, html):
@@ -263,7 +264,7 @@ class IcsaSpider(BaseSpider):
             # item = OrderedDict()
             detail_html = self.get_content(detail_url)
             ics_temp = detail_html.xpath("//div[@id='ncas-header']/h1")[0].text.strip()
-            item["ICS Advisory-ID"] = ics_temp.split("(")[-1].strip(")")
+            item["ICS-Advisory-ID"] = ics_temp.split("(")[-1].strip(")")
             item["title"] = detail_html.xpath("//div[@id='ncas-header']/h2")[0].text.strip()
             # CVSS = detail_html.xpath("//div[@id='ncas-content']/div/ul[1]/li[1]//text()")[0].strip()
             # item["CVSS v3"] = CVSS[8:]
@@ -403,6 +404,53 @@ class IcsaSpider(BaseSpider):
             # traceback.print_exc()
             # db.insert_one(item)
 
+    def get_alert_detail(self,html):
+        href_list = html.xpath("//ul//span/a/@href")
+        for a in href_list:
+            detail_url = self.part_url + a
+            print(detail_url)
+            # judge if exist in db
+            select_str = "select count(*) from icsa_url where href='{}'".format(detail_url)
+            res, rows = self.db.read_db(select_str)
+            if res == 0 and rows:
+                if rows[0][0] > 0:
+                    return "end"
+            item = {}
+            # item = OrderedDict()
+            detail_html = self.get_content(detail_url)
+            ics_temp = detail_html.xpath("//div[@id='ncas-header']/h1")[0].text.strip()
+            item["ICS-Alerts-ID"] = ics_temp.split("(")[-1].strip(")")
+            item["title"] = detail_html.xpath("//div[@id='ncas-header']/h2")[0].text.strip()
+            overview_cont_list1 = detail_html.xpath("//div[@id='ncas-content']/div//text()")
+            overview_cont_list = [i.strip() for i in list(filter(not_empty, overview_cont_list1))]
+            print(overview_cont_list)
+            for i, cont in enumerate(overview_cont_list):
+                if "SUMMARY" in cont or "Summary" in cont or "OVERVIEW" in cont or "Overview" in cont:
+                    overview_cont_list[i] = "SUMMARY"
+                elif "MITIGATION" in cont or "Mitigation" in cont:
+                    overview_cont_list[i] = "MITIGATION"
+                elif "Follow-Up" in cont or "FOLLOW-UP" in cont:
+                    overview_cont_list[i] = "FOLLOW-UP"
+            if "FOLLOW-UP" in overview_cont_list:
+                item["SUMMARY"] = " ".join(overview_cont_list[overview_cont_list.index("SUMMARY") + 1: overview_cont_list.index("FOLLOW-UP")])
+                if "MITIGATION" in overview_cont_list:
+                    item["MITIGATION"] = " ".join(overview_cont_list[overview_cont_list.index("MITIGATION") + 1:])
+                else:
+                    item["MITIGATION"] = ""
+            elif "MITIGATION" in overview_cont_list:
+                item["SUMMARY"] = " ".join(overview_cont_list[overview_cont_list.index("SUMMARY") + 1: overview_cont_list.index("MITIGATION")])
+                item["MITIGATION"] = " ".join(overview_cont_list[overview_cont_list.index("MITIGATION") + 1:])
+            else:
+                item["SUMMARY"] = " ".join(overview_cont_list[overview_cont_list.index("SUMMARY") + 1:])
+                item["MITIGATION"] = ""
+
+            print(item)
+            item=json.dumps(item)
+            item=item.replace("\\n", "")
+            self.write_file("icsa.log", item)
+            sql_str="insert into icsa_url(href) values('{}')".format(detail_url)
+            self.db.write_db(sql_str)
+
     def run(self):
         for i in range(10):
             url = self.start_url.format(i)
@@ -410,7 +458,14 @@ class IcsaSpider(BaseSpider):
             res = self.get_detail(html)
             if res == "end":
                 break
-            time.sleep(8)
+            time.sleep(6)
+        for i in range(3):
+            url = self.start_alert_url.format(i)
+            html = self.get_content(url)
+            res = self.get_alert_detail(html)
+            if res == "end":
+                break
+            time.sleep(5)
 
 
 class CveSpider(BaseSpider):
@@ -419,11 +474,16 @@ class CveSpider(BaseSpider):
         self.start_url = "http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-{}-{}"
         self.end = "http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-{}-{}"
 
-    def get_detail(self, html):
+    def get_detail(self, url):
         item = {}
         # item = OrderedDict()
+        html = self.get_content(url)
+        if not html.xpath("//tr/td//h2"):
+            return "end"
         item["CVE-ID"] = html.xpath("//tr/td//h2")[0].text.strip()
         item["Description"] = "".join(list(filter(not_empty, html.xpath("//div[@id='GeneratedTable']//tr[4]//text()"))))
+        if "RESERVED" in item["Description"]:
+            return "RESERVED"
         item["References"] = "".join(list(filter(not_empty, html.xpath("//div[@id='GeneratedTable']//tr[7]//text()"))))
         item["Assigning CNA"] = html.xpath("//div[@id='GeneratedTable']//tr[9]/td[1]//text()")[0].strip()
         item["Date Entry Created"] = html.xpath("//div[@id='GeneratedTable']//tr[11]/td[1]//text()")[0].strip()
@@ -435,26 +495,36 @@ class CveSpider(BaseSpider):
         item = json.dumps(item)
         item = item.replace("\\n", "")
         self.write_file("cve.log", item)
+        sql_str = "insert into cve_url(href) values('{}')".format(url)
+        self.db.write_db(sql_str)
 
     def run(self):
-        year_list = [2019]
-        for year in year_list:
-            for num in range(1, 30000):
-                if num < 1000:
-                    num = "%04d" % num
-                url = self.start_url.format(year, num)
-                print(url)
-                html = self.get_content(url)
-                self.get_detail(html)
-                time.sleep(1)
+        # year_list = [2019]
+        # for year in year_list:
+        sql_str = "select href from cve_url order by cid desc limit 1"
+        res, row = self.db.read_db(sql_str)
+        if res == 0 and row:
+            start = int(row[0][0].split("-")[-1]) + 1
+        else:
+            start = 12000
+        print(start)
+        for num in range(start, 30000):
+            if num < 1000:
+                num = "%04d" % num
+            url = self.start_url.format(2019, num)
+            print(url)
+            res = self.get_detail(url)
+            if res == "end":
+                break
+            time.sleep(1)
 
 
 if __name__ == '__main__':
-    # cnvd = CnvdSpider()
-    # cnvd.run()
-    # cnnvd = CnnvdSpider()
-    # cnnvd.run()
+    cnvd = CnvdSpider()
+    cnvd.run()
+    cnnvd = CnnvdSpider()
+    cnnvd.run()
     icsa = IcsaSpider()
     icsa.run()
-    # cve = CveSpider()
-    # cve.run()
+    cve = CveSpider()
+    cve.run()
