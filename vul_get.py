@@ -9,11 +9,7 @@ import json
 from lxml import etree
 from selenium import webdriver
 from collections import OrderedDict
-# from mongo_proxy import Dbproxy
 from common_func import DbProxy
-# from pprint import pprint
-
-# db = Dbproxy()
 
 
 def not_empty(s):
@@ -142,12 +138,12 @@ class CnvdSpider(BaseSpider):
                 item["收录时间"] = "".join(temp_list[cate_date_start+1: update_start])
                 item["更新时间"] = "".join(temp_list[update_start+1: attach_start])
                 item["漏洞附件"] = "".join(temp_list[attach_start+1:])
-                print(item)
+                # print(item)
             finally:
                 item_list.append(item)
-                item=json.dumps(item)
-                item=item.replace("\\n", "")
-                self.write_file("cnvd.log", item)
+                item = json.dumps(item)
+                item = item.replace("\\n", "")
+                self.write_file("v.log", item)
                 sql_str = "insert into cnvd_url(href) values('{}')".format(href)
                 self.db.write_db(sql_str)
                 # traceback.print_exc()
@@ -155,7 +151,7 @@ class CnvdSpider(BaseSpider):
         # return item_list
 
     def run(self):
-        for i in range(1, 5):
+        for i in range(0, 5):
             url = self.start_url.format(i*20)
             html = self.get_content(url)
             item = self.parse_detail(html)
@@ -171,7 +167,6 @@ class CnnvdSpider(BaseSpider):
 
     def get_detail(self, html):
         url_list = html.xpath("//div[@class='list_list']//li/div/a/@href")
-        # item_list = []
         for a in url_list:
             detail_url = self.part_url + a
             # detail_url = "http://www.cnnvd.org.cn/web/xxk/ldxqById.tag?CNNVD=CNNVD-201907-368"
@@ -201,7 +196,7 @@ class CnnvdSpider(BaseSpider):
                 item["参考网址"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p") else ""
                 item["受影响实体"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p") else ""
                 item["补丁"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p") else ""
-                print(item)
+                # print(item)
             except IndexError:
                 time.sleep(10)
                 detail_html = self.get_content(detail_url)
@@ -220,13 +215,13 @@ class CnnvdSpider(BaseSpider):
                 item["参考网址"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][2]/p") else ""
                 item["受影响实体"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][3]/p") else ""
                 item["补丁"] = "".join([i.text.strip() for i in detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p")]) if detail_html.xpath("//div/div/div/div[@class='d_ldjj m_t_20'][4]/p") else ""
-                print(item)
+                # print(item)
             except:
                 traceback.print_exc()
             finally:
                 # write file and db
                 item = json.dumps(item)
-                self.write_file("cnnvd.log", item)
+                self.write_file("v.log", item)
                 sql_str = "insert into cnnvd_url(href) values('{}')".format(detail_url)
                 self.db.write_db(sql_str)
 
@@ -259,7 +254,6 @@ class IcsaSpider(BaseSpider):
             if res == 0 and rows:
                 if rows[0][0] > 0:
                     return "end"
-
             item={}
             # item = OrderedDict()
             detail_html = self.get_content(detail_url)
@@ -283,7 +277,7 @@ class IcsaSpider(BaseSpider):
 
             overview_cont_list1 = detail_html.xpath("//div[@id='ncas-content']/div[1]//text()")
             overview_cont_list = [i.strip() for i in list(filter(not_empty, overview_cont_list1))]
-            print(overview_cont_list)
+            # print(overview_cont_list)
             for i, cont in enumerate(overview_cont_list):
                 if "UPDATE INFORMATION" in cont or "REPOSTED INFORMATION" in cont:
                     overview_cont_list[i] = "2. UPDATE INFORMATION"
@@ -331,7 +325,6 @@ class IcsaSpider(BaseSpider):
                 item["Vendor"] = "".join(overview_cont_list[vender_start+1: Equipment_start]).strip(":")
                 item["Equipment"] = "".join(overview_cont_list[Equipment_start+1: Vulnerability_start]).strip(":")
                 item["Vulnerabilities"] = "".join(overview_cont_list[Vulnerability_start+1: Vulnerability_end]).replace("\xa0", "")
-                # item["RISK EVALUATION"] = detail_html.xpath("//div[@id='ncas-content']/div[1]/p[1]//text()")[0].strip()
             elif "Vendor:" in overview_cont_list:
                 vender_start = overview_cont_list.index("Vendor:")
                 Equipment_start = overview_cont_list.index("Equipment:") if "Equipment:" in overview_cont_list else vender_start+2
@@ -369,40 +362,37 @@ class IcsaSpider(BaseSpider):
                 item["MITIGATIONS"] = " ".join(overview_cont_list[res_end + 1:]).replace("\xa0", "")
             except ValueError:
                 if "ICSMA" in detail_url:
-                    aftprd_start=overview_cont_list.index("3.1 AFFECTED PRODUCTS")
-                    risk_start=overview_cont_list.index("IMPACT")
-                    back_start=overview_cont_list.index("3.3 BACKGROUND")
-                    overview_start=overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
-                    mit_start=overview_cont_list.index("4. MITIGATIONS")
-                    detail_start=overview_cont_list.index("VULNERABILITY DETAILS") if "VULNERABILITY DETAILS" in overview_cont_list else mit_start
-                    item["AFFECTED PRODUCTS"]=" ".join(overview_cont_list[aftprd_start + 1: risk_start])
-                    item["RISK EVALUATION"]=" ".join(overview_cont_list[risk_start + 1: back_start])
-                    item["BACKGROUND"]=" ".join(overview_cont_list[back_start + 1: overview_start-1])
-                    item["VULNERABILITY OVERVIEW"]=" ".join(overview_cont_list[overview_start + 1: detail_start])
-                    item["MITIGATIONS"]=" ".join(overview_cont_list[mit_start + 1:]).replace("\xa0", "")
+                    aftprd_start = overview_cont_list.index("3.1 AFFECTED PRODUCTS")
+                    risk_start = overview_cont_list.index("IMPACT")
+                    back_start = overview_cont_list.index("3.3 BACKGROUND")
+                    overview_start = overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
+                    mit_start = overview_cont_list.index("4. MITIGATIONS")
+                    detail_start = overview_cont_list.index("VULNERABILITY DETAILS") if "VULNERABILITY DETAILS" in overview_cont_list else mit_start
+                    item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start + 1: risk_start])
+                    item["RISK EVALUATION"] = " ".join(overview_cont_list[risk_start + 1: back_start])
+                    item["BACKGROUND"] = " ".join(overview_cont_list[back_start + 1: overview_start-1])
+                    item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start + 1: detail_start])
+                    item["MITIGATIONS"] = " ".join(overview_cont_list[mit_start + 1:]).replace("\xa0", "")
 
                 elif "IMPACT" in overview_cont_list:
-                    aftprd_start=overview_cont_list.index("3.1 AFFECTED PRODUCTS")
-                    risk_start=overview_cont_list.index("IMPACT")
-                    mit_start=overview_cont_list.index("4. MITIGATIONS")
-                    overview_start=overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
-                    res_start=overview_cont_list.index("3.4 RESEARCHER")
-                    back_start=overview_cont_list.index("3.3 BACKGROUND")
-                    item["AFFECTED PRODUCTS"]=" ".join(overview_cont_list[aftprd_start + 1: risk_start])
-                    item["RISK EVALUATION"]=" ".join(overview_cont_list[risk_start + 1: mit_start - 1])
-                    item["MITIGATIONS"]=" ".join(overview_cont_list[mit_start + 1: overview_start]).replace("\xa0", "")
-                    item["VULNERABILITY OVERVIEW"]=" ".join(overview_cont_list[overview_start + 1: res_start])
-                    item["RESEARCHER"]=" ".join(overview_cont_list[res_start + 1: back_start])
-                    item["BACKGROUND"]=" ".join(overview_cont_list[back_start + 1:])
-
-            print(item)
-            item=json.dumps(item)
-            item=item.replace("\\n", "")
-            self.write_file("icsa.log", item)
-            sql_str="insert into icsa_url(href) values('{}')".format(detail_url)
+                    aftprd_start = overview_cont_list.index("3.1 AFFECTED PRODUCTS")
+                    risk_start = overview_cont_list.index("IMPACT")
+                    mit_start = overview_cont_list.index("4. MITIGATIONS")
+                    overview_start = overview_cont_list.index("3.2 VULNERABILITY OVERVIEW")
+                    res_start = overview_cont_list.index("3.4 RESEARCHER")
+                    back_start = overview_cont_list.index("3.3 BACKGROUND")
+                    item["AFFECTED PRODUCTS"] = " ".join(overview_cont_list[aftprd_start + 1: risk_start])
+                    item["RISK EVALUATION"] = " ".join(overview_cont_list[risk_start + 1: mit_start - 1])
+                    item["MITIGATIONS"] = " ".join(overview_cont_list[mit_start + 1: overview_start]).replace("\xa0", "")
+                    item["VULNERABILITY OVERVIEW"] = " ".join(overview_cont_list[overview_start + 1: res_start])
+                    item["RESEARCHER"] = " ".join(overview_cont_list[res_start + 1: back_start])
+                    item["BACKGROUND"] = " ".join(overview_cont_list[back_start + 1:])
+            # print(item)
+            item = json.dumps(item)
+            item = item.replace("\\n", "")
+            self.write_file("v.log", item)
+            sql_str = "insert into icsa_url(href) values('{}')".format(detail_url)
             self.db.write_db(sql_str)
-            # traceback.print_exc()
-            # db.insert_one(item)
 
     def get_alert_detail(self,html):
         href_list = html.xpath("//ul//span/a/@href")
@@ -423,7 +413,7 @@ class IcsaSpider(BaseSpider):
             item["title"] = detail_html.xpath("//div[@id='ncas-header']/h2")[0].text.strip()
             overview_cont_list1 = detail_html.xpath("//div[@id='ncas-content']/div//text()")
             overview_cont_list = [i.strip() for i in list(filter(not_empty, overview_cont_list1))]
-            print(overview_cont_list)
+            # print(overview_cont_list)
             for i, cont in enumerate(overview_cont_list):
                 if "SUMMARY" in cont or "Summary" in cont or "OVERVIEW" in cont or "Overview" in cont:
                     overview_cont_list[i] = "SUMMARY"
@@ -444,22 +434,22 @@ class IcsaSpider(BaseSpider):
                 item["SUMMARY"] = " ".join(overview_cont_list[overview_cont_list.index("SUMMARY") + 1:])
                 item["MITIGATION"] = ""
 
-            print(item)
-            item=json.dumps(item)
-            item=item.replace("\\n", "")
-            self.write_file("icsa.log", item)
-            sql_str="insert into icsa_url(href) values('{}')".format(detail_url)
+            # print(item)
+            item = json.dumps(item)
+            item = item.replace("\\n", "")
+            self.write_file("v.log", item)
+            sql_str = "insert into icsa_url(href) values('{}')".format(detail_url)
             self.db.write_db(sql_str)
 
     def run(self):
-        for i in range(10):
+        for i in range(4):
             url = self.start_url.format(i)
             html = self.get_content(url)
             res = self.get_detail(html)
             if res == "end":
                 break
             time.sleep(6)
-        for i in range(3):
+        for i in range(4):
             url = self.start_alert_url.format(i)
             html = self.get_content(url)
             res = self.get_alert_detail(html)
@@ -491,10 +481,10 @@ class CveSpider(BaseSpider):
         item["Votes (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[15]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[15]/td[1]//text()") else ""
         item["Comments (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[17]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[17]/td[1]//text()") else ""
         item["Proposed (Legacy)"] = html.xpath("//div[@id='GeneratedTable']//tr[19]/td[1]//text()")[0].strip() if html.xpath("//div[@id='GeneratedTable']//tr[19]/td[1]//text()") else ""
-        print(item)
+        # print(item)
         item = json.dumps(item)
         item = item.replace("\\n", "")
-        self.write_file("cve.log", item)
+        self.write_file("v.log", item)
         sql_str = "insert into cve_url(href) values('{}')".format(url)
         self.db.write_db(sql_str)
 
@@ -506,7 +496,7 @@ class CveSpider(BaseSpider):
         if res == 0 and row:
             start = int(row[0][0].split("-")[-1]) + 1
         else:
-            start = 12000
+            start = 13500
         print(start)
         for num in range(start, 30000):
             if num < 1000:
@@ -520,11 +510,27 @@ class CveSpider(BaseSpider):
 
 
 if __name__ == '__main__':
-    cnvd = CnvdSpider()
-    cnvd.run()
-    cnnvd = CnnvdSpider()
-    cnnvd.run()
-    icsa = IcsaSpider()
-    icsa.run()
-    cve = CveSpider()
-    cve.run()
+    try:
+        cnnvd = CnnvdSpider()
+        cnnvd.run()
+    except:
+        print("get cnnvd_info run error...")
+        traceback.print_exc()
+    try:
+        cnvd = CnvdSpider()
+        cnvd.run()
+    except:
+        print("get cnvd_info run error...")
+        traceback.print_exc()
+    try:
+        icsa = IcsaSpider()
+        icsa.run()
+    except:
+        print("get icsa_info run error...")
+        traceback.print_exc()
+    try:
+        cve = CveSpider()
+        cve.run()
+    except:
+        print("get cve_info run error...")
+        traceback.print_exc()

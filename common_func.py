@@ -7,9 +7,11 @@ import traceback
 import logging
 import pymysql
 pymysql.install_as_MySQLdb()
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import Header
+
+MYSQL_HOST = "192.168.81.4"
+MYSQL_USER = "root"
+MYSQL_PWD = "123456"
+MYSQL_DB = "vul_info"
 
 
 class DbProxy(object):
@@ -18,7 +20,7 @@ class DbProxy(object):
         self.reconnect_times=0
         self.cur=None
         try:
-            self.conn=pymysql.connect(host='192.168.81.4', port=3306, user='root', passwd='123456', db='vul_info')
+            self.conn=pymysql.connect(host=MYSQL_HOST, port=3306, user=MYSQL_USER, passwd=MYSQL_PWD, db=MYSQL_DB)
         except:
             logging.error('connet mysql error')
             logging.error(traceback.format_exc())
@@ -133,7 +135,7 @@ class DbProxy(object):
         except:
             logging.error(traceback.format_exc())
         try:
-            self.conn=pymysql.connect(host='192.168.81.4', port=3306, user='root', passwd='123456', db='vul_info')
+            self.conn=pymysql.connect(host=MYSQL_HOST, port=3306, user=MYSQL_USER, passwd=MYSQL_PWD, db=MYSQL_DB)
         except:
             logging.error('connet mysql error')
             logging.error(traceback.format_exc())
